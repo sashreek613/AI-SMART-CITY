@@ -186,6 +186,27 @@ if page == "Submit Complaint":
 
     st.title("Submit Complaint")
 
+    # -------- CURRENT LOCATION BUTTON --------
+
+    if st.button("📍 Use Current Location"):
+
+        gps = get_geolocation()
+
+        if gps:
+            st.session_state.current_lat = gps["coords"]["latitude"]
+            st.session_state.current_lon = gps["coords"]["longitude"]
+
+            address = reverse_geocode(
+                st.session_state.current_lat,
+                st.session_state.current_lon
+            )
+
+            st.session_state.current_address = address
+
+            st.success(f"Location detected: {address}")
+
+    # -------- COMPLAINT FORM --------
+
     with st.form("complaint_form", clear_on_submit=True):
 
         complaint = st.text_area("Describe issue")
@@ -201,8 +222,16 @@ if page == "Submit Complaint":
         lon = None
         address = location
 
+        # If manual location entered
         if location:
             lat,lon,address = get_coordinates(location)
+
+        # If GPS location used
+        if "current_lat" in st.session_state:
+
+            lat = st.session_state.current_lat
+            lon = st.session_state.current_lon
+            address = st.session_state.current_address
 
         st.subheader("Select location on map")
 
@@ -241,7 +270,6 @@ if page == "Submit Complaint":
             })
 
             st.success("Complaint submitted successfully!")
-
 # -------------------------
 # DASHBOARD
 # -------------------------
