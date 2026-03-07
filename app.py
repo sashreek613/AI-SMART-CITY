@@ -1,40 +1,28 @@
 import streamlit as st
 import pandas as pd
 import folium
+import uuid
 import requests
 from streamlit_folium import st_folium
 from folium.plugins import HeatMap, MarkerCluster
 from datetime import datetime
 from geopy.geocoders import Nominatim
 from textblob import TextBlob
+from streamlit_js_eval import get_geolocation
 from streamlit_autorefresh import st_autorefresh
-from PIL import Image
 
 st.set_page_config(page_title="Smart City AI Command Center", layout="wide")
 
-# -------------------------
 # AUTO REFRESH
-# -------------------------
-
 st_autorefresh(interval=10000, key="refresh")
-
-# -------------------------
-# GEOLOCATOR
-# -------------------------
 
 geolocator = Nominatim(user_agent="smart_city_ai")
 
-# -------------------------
 # SESSION STORAGE
-# -------------------------
-
 if "complaints" not in st.session_state:
     st.session_state.complaints = []
 
-# -------------------------
 # LOAD CITY DATA
-# -------------------------
-
 @st.cache_data(ttl=300)
 def load_city_data():
 
@@ -56,10 +44,64 @@ def load_city_data():
 
 city_df = load_city_data()
 
-# -------------------------
-# GEO FUNCTIONS
-# -------------------------
+# AI SUMMARY
+def summarize(text):
 
+    blob = TextBlob(text)
+
+    if len(blob.sentences) > 0:
+        return str(blob.sentences[0])
+
+    return text[:80]
+
+# URGENCY DETECTION
+def detect_urgency(text):
+
+    text = text.lower()
+
+    high_keywords = ["fire","accident","sewage","leak"]
+    medium_keywords = ["traffic","pothole","garbage"]
+
+    score = 0
+
+    for w in high_keywords:
+        if w in text:
+            score += 3
+
+    for w in medium_keywords:
+        if w in text:
+            score += 2
+
+    if score >= 5:
+        return "High"
+    elif score >= 3:
+        return "Medium"
+    else:
+        return "Low"
+
+# CLASSIFIER
+def classify(text):
+
+    text = text.lower()
+
+    if "garbage" in text:
+        return "Sanitation","Waste Management"
+
+    elif "light" in text:
+        return "Infrastructure","Electrical"
+
+    elif "water" in text:
+        return "Water","Water Department"
+
+    elif "traffic" in text:
+        return "Traffic","Traffic Department"
+
+    elif "pothole" in text:
+        return "Road Damage","Road Department"
+
+    return "General","City Services"
+
+# GEO FUNCTIONS
 def get_coordinates(location):
 
     try:
@@ -71,13 +113,13 @@ def get_coordinates(location):
     except:
         pass
 
-    return None, None, location
+    return None,None,location
 
 
-def reverse_geocode(lat, lon):
+def reverse_geocode(lat,lon):
 
     try:
-        loc = geolocator.reverse((lat, lon))
+        loc = geolocator.reverse((lat,lon))
 
         if loc:
             return loc.address
@@ -87,89 +129,15 @@ def reverse_geocode(lat, lon):
 
     return f"{lat},{lon}"
 
-# -------------------------
-# AI SUMMARIZER
-# -------------------------
-
-def summarize(text):
-
-    blob = TextBlob(text)
-    sentences = blob.sentences
-
-    if len(sentences) > 1:
-        return str(sentences[0])
-
-    return text[:80]
-
-# -------------------------
-# URGENCY DETECTION
-# -------------------------
-
-def detect_urgency(text):
-
-    text = text.lower()
-    score = 0
-
-    high_keywords = ["broken","fire","accident","sewage","leak"]
-    medium_keywords = ["traffic","signal","garbage","pothole"]
-
-    for word in high_keywords:
-        if word in text:
-            score += 3
-
-    for word in medium_keywords:
-        if word in text:
-            score += 2
-
-    sentiment = TextBlob(text).sentiment.polarity
-
-    if sentiment < -0.3:
-        score += 1
-
-    if score >= 5:
-        return "High"
-    elif score >= 3:
-        return "Medium"
-    else:
-        return "Low"
-
-# -------------------------
-# CLASSIFIER
-# -------------------------
-
-def classify(text):
-
-    text = text.lower()
-    urgency = detect_urgency(text)
-
-    if "garbage" in text:
-        return "Sanitation","Waste Management",urgency
-
-    elif "light" in text:
-        return "Infrastructure","Electrical Department",urgency
-
-    elif "water" in text:
-        return "Water Supply","Water Department",urgency
-
-    elif "traffic" in text:
-        return "Traffic","Traffic Department",urgency
-
-    elif "pothole" in text:
-        return "Road Damage","Road Department",urgency
-
-    else:
-        return "General","City Services",urgency
-
-# -------------------------
 # SIDEBAR
-# -------------------------
-
-st.sidebar.title("Smart City Command Center")
+st.sidebar.title("Smart City System")
 
 page = st.sidebar.radio(
     "Navigation",
     [
-        "Submit Complaint",
+        "Citizen Portal",
+        "Track Complaint",
+        "Government Portal",
         "Dashboard",
         "City Map",
         "Analytics",
@@ -178,60 +146,47 @@ page = st.sidebar.radio(
     ]
 )
 
-# -------------------------
-# SUBMIT COMPLAINT
-# -------------------------
+# CITIZEN PORTAL
+if page == "Citizen Portal":
 
-if page == "Submit Complaint":
-
-    st.title("Submit Complaint")
-
-    # -------- CURRENT LOCATION BUTTON --------
+    st.title("Citizen Complaint Portal")
 
     if st.button("📍 Use Current Location"):
 
         gps = get_geolocation()
 
         if gps:
-            st.session_state.current_lat = gps["coords"]["latitude"]
-            st.session_state.current_lon = gps["coords"]["longitude"]
-
-            address = reverse_geocode(
-                st.session_state.current_lat,
-                st.session_state.current_lon
+            st.session_state.lat = gps["coords"]["latitude"]
+            st.session_state.lon = gps["coords"]["longitude"]
+            st.session_state.address = reverse_geocode(
+                st.session_state.lat,
+                st.session_state.lon
             )
 
-            st.session_state.current_address = address
-
-            st.success(f"Location detected: {address}")
-
-    # -------- COMPLAINT FORM --------
+            st.success(f"Location detected: {st.session_state.address}")
 
     with st.form("complaint_form", clear_on_submit=True):
 
-        complaint = st.text_area("Describe issue")
+        complaint = st.text_area("Describe Issue")
 
-        location = st.text_input("Enter location")
+        location = st.text_input("Enter Location")
 
-        image = st.file_uploader("Upload Photo of Issue", type=["jpg","png","jpeg"])
+        image = st.file_uploader("Upload Photo", type=["jpg","png","jpeg"])
 
         if image:
-            st.image(image,width=300)
+            st.image(image, caption="Uploaded Issue Photo", width=300)
 
         lat = None
         lon = None
         address = location
 
-        # If manual location entered
         if location:
             lat,lon,address = get_coordinates(location)
 
-        # If GPS location used
-        if "current_lat" in st.session_state:
-
-            lat = st.session_state.current_lat
-            lon = st.session_state.current_lon
-            address = st.session_state.current_address
+        if "lat" in st.session_state:
+            lat = st.session_state.lat
+            lon = st.session_state.lon
+            address = st.session_state.address
 
         st.subheader("Select location on map")
 
@@ -240,22 +195,27 @@ if page == "Submit Complaint":
         map_data = st_folium(map_select,height=400)
 
         if map_data and map_data["last_clicked"]:
-
             lat = map_data["last_clicked"]["lat"]
             lon = map_data["last_clicked"]["lng"]
-
             address = reverse_geocode(lat,lon)
 
         submitted = st.form_submit_button("Submit Complaint")
 
         if submitted:
 
-            category,department,urgency = classify(complaint)
+            if complaint.strip() == "":
+                st.error("Please describe the issue")
+                st.stop()
 
             summary = summarize(complaint)
+            urgency = detect_urgency(complaint)
+            category,department = classify(complaint)
+
+            complaint_id = str(uuid.uuid4())[:8]
 
             st.session_state.complaints.append({
 
+                "id":complaint_id,
                 "complaint":complaint,
                 "summary":summary,
                 "location":address,
@@ -265,54 +225,129 @@ if page == "Submit Complaint":
                 "lat":lat,
                 "lon":lon,
                 "image":image,
+                "status":"Pending",
                 "time":datetime.now()
 
             })
 
-            st.success("Complaint submitted successfully!")
-# -------------------------
-# DASHBOARD
-# -------------------------
+            st.success(f"Complaint Submitted. Your ID: {complaint_id}")
 
-elif page == "Dashboard":
+# TRACK COMPLAINT
+elif page == "Track Complaint":
 
-    st.title("City Command Center Dashboard")
+    st.title("Track Complaint")
 
-    df = pd.DataFrame(st.session_state.complaints)
+    cid = st.text_input("Enter Complaint ID")
 
-    if len(df) == 0:
-        st.info("No complaints submitted yet")
+    if st.button("Track"):
+
+        df = pd.DataFrame(st.session_state.complaints)
+
+        result = df[df["id"]==cid]
+
+        if len(result)==0:
+            st.error("Complaint not found")
+
+        else:
+
+            row = result.iloc[0]
+
+            st.write("Issue:",row["summary"])
+            st.write("Location:",row["location"])
+            st.write("Department:",row["department"])
+
+            status=row["status"]
+
+            if status=="Pending":
+                st.info("Complaint received")
+
+            elif status=="In Progress":
+                st.warning("Work in progress")
+
+            elif status=="Resolved":
+                st.success("Issue resolved")
+
+# GOVERNMENT PORTAL
+elif page == "Government Portal":
+
+    st.title("Government Control Panel")
+
+    df=pd.DataFrame(st.session_state.complaints)
+
+    if len(df)==0:
+        st.info("No complaints")
 
     else:
 
-        c1,c2,c3,c4 = st.columns(4)
+        priority_map = {"High":3,"Medium":2,"Low":1}
+        df["priority"] = df["urgency"].map(priority_map)
+        df = df.sort_values("priority", ascending=False)
 
-        c1.metric("Total Complaints",len(df))
-        c2.metric("High Urgency",len(df[df["urgency"]=="High"]))
-        c3.metric("Medium Urgency",len(df[df["urgency"]=="Medium"]))
-        c4.metric("Low Urgency",len(df[df["urgency"]=="Low"]))
+        for i,row in df.iterrows():
 
-        st.dataframe(df[["summary","location","department","urgency","time"]].sort_values("time",ascending=False))
+            st.write("Issue:",row["summary"])
+            st.write("Location:",row["location"])
+            st.write("Urgency:",row["urgency"])
 
-# -------------------------
+            if row["image"]:
+                st.image(row["image"], width=250)
+
+            status=st.selectbox(
+                "Update Status",
+                ["Pending","In Progress","Resolved"],
+                index=["Pending","In Progress","Resolved"].index(row["status"]),
+                key=f"s{i}"
+            )
+
+            if st.button("Update",key=f"b{i}"):
+
+                st.session_state.complaints[i]["status"]=status
+                st.success("Updated")
+
+            st.divider()
+
+# DASHBOARD
+elif page=="Dashboard":
+
+    st.title("City Dashboard")
+
+    df=pd.DataFrame(st.session_state.complaints)
+
+    if len(df)==0:
+        st.info("No complaints")
+
+    else:
+
+        c1,c2,c3=st.columns(3)
+
+        c1.metric("Total",len(df))
+        c2.metric("High",len(df[df["urgency"]=="High"]))
+        c3.metric("Resolved",len(df[df["status"]=="Resolved"]))
+
+        st.dataframe(df[["id","summary","location","department","urgency","status"]])
+
+        st.download_button(
+            "Download Complaints CSV",
+            df.to_csv(index=False),
+            "complaints.csv"
+        )
+
 # CITY MAP
-# -------------------------
+elif page=="City Map":
 
-elif page == "City Map":
+    st.title("City Issue Map")
 
-    st.title("City Issues Map")
+    m=folium.Map(location=[32.37,-86.30],zoom_start=12)
 
-    m = folium.Map(location=[32.37,-86.30],zoom_start=12)
-
-    cluster = MarkerCluster().add_to(m)
+    cluster=MarkerCluster().add_to(m)
 
     heat=[]
 
-    df = pd.DataFrame(st.session_state.complaints)
+    df=pd.DataFrame(st.session_state.complaints)
 
     for _,row in df.iterrows():
 
-        if pd.notnull(row["lat"]) and pd.notnull(row["lon"]):
+        if pd.notnull(row["lat"]):
 
             folium.Marker(
                 [row["lat"],row["lon"]],
@@ -322,108 +357,80 @@ elif page == "City Map":
 
             heat.append([row["lat"],row["lon"]])
 
+    for _,row in city_df.iterrows():
+
+        if "lat" in row and pd.notnull(row["lat"]):
+
+            folium.Marker(
+                [row["lat"],row["lon"]],
+                popup="City Data",
+                icon=folium.Icon(color="blue")
+            ).add_to(cluster)
+
+            heat.append([row["lat"],row["lon"]])
+
     if heat:
         HeatMap(heat).add_to(m)
 
     st_folium(m,width=900,height=600)
 
-# -------------------------
 # ANALYTICS
-# -------------------------
-
-elif page == "Analytics":
+elif page=="Analytics":
 
     st.title("City Analytics")
 
-    df = pd.DataFrame(st.session_state.complaints)
+    df=pd.DataFrame(st.session_state.complaints)
 
-    if len(df)==0:
-        st.info("No analytics yet")
-
-    else:
+    if len(df)>0:
 
         st.bar_chart(df["department"].value_counts())
         st.bar_chart(df["location"].value_counts())
 
-# -------------------------
 # RISK DASHBOARD
-# -------------------------
+elif page=="Risk Dashboard":
 
-elif page == "Risk Dashboard":
+    st.title("City Risk Prediction")
 
-    st.title("City Risk Prediction Dashboard")
-
-    df = pd.DataFrame(st.session_state.complaints)
+    df=pd.DataFrame(st.session_state.complaints)
 
     if len(df)==0:
-        st.info("No risk data yet")
+        st.info("No data")
 
     else:
 
-        def risk_score(row):
+        risk=df["urgency"].map({
+            "High":5,
+            "Medium":3,
+            "Low":1
+        }).sum()
 
-            if row["urgency"]=="High":
-                return 5
-            elif row["urgency"]=="Medium":
-                return 3
-            else:
-                return 1
-
-        df["risk"] = df.apply(risk_score,axis=1)
-
-        total_risk = df["risk"].sum()
-
-        if total_risk < 10:
-            level = "Low"
-        elif total_risk < 25:
-            level = "Moderate"
-        elif total_risk < 50:
-            level = "High"
+        if risk<10:
+            level="Low"
+        elif risk<25:
+            level="Moderate"
+        elif risk<50:
+            level="High"
         else:
-            level = "Critical"
+            level="Critical"
 
-        st.metric("City Risk Level", level)
-        st.metric("Total Risk Score", total_risk)
+        st.metric("City Risk Level",level)
 
-        risk_df = df.groupby("location")["risk"].sum().sort_values(ascending=False).reset_index()
-        risk_df.columns=["Location","Risk Score"]
-
-        st.dataframe(risk_df)
-        st.bar_chart(risk_df.set_index("Location"))
-
-# -------------------------
 # EMERGENCY ALERTS
-# -------------------------
+elif page=="Emergency Alerts":
 
-elif page == "Emergency Alerts":
+    st.title("Emergency Alerts")
 
-    st.title("🚨 Live Emergency Alerts")
+    df=pd.DataFrame(st.session_state.complaints)
 
-    df = pd.DataFrame(st.session_state.complaints)
+    alerts=df[df["urgency"]=="High"]
 
-    if len(df)==0:
-        st.info("No alerts")
+    if len(alerts)==0:
+        st.success("No emergencies")
 
     else:
 
-        alerts = df[df["urgency"]=="High"]
+        for _,row in alerts.iterrows():
 
-        if len(alerts)==0:
-            st.success("No emergency alerts")
-
-        else:
-
-            st.error("⚠ HIGH PRIORITY INCIDENTS DETECTED")
-
-            for _,row in alerts.iterrows():
-
-                st.warning(
-                    f"""
-                    🚨 **Emergency Issue**
-
-                    **Location:** {row['location']}  
-                    **Department:** {row['department']}  
-                    **Issue:** {row['summary']}  
-                    **Reported:** {row['time']}
-                    """
-                )
+            st.error(
+                f"🚨 {row['summary']} at {row['location']}"
+            )
