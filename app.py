@@ -2,112 +2,344 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
+from folium.plugins import HeatMap, MarkerCluster
+from datetime import datetime
+from geopy.geocoders import Nominatim
+
+st.set_page_config(page_title="Smart City AI", layout="wide")
+
+# -------------------------
+# SESSION STORAGE
+# -------------------------
 
 if "complaints" not in st.session_state:
     st.session_state.complaints = []
+
+# -------------------------
+# SIDEBAR NAVIGATION
+# -------------------------
+
+st.sidebar.title("Smart City AI Dashboard")
+
+page = st.sidebar.radio(
+    "Navigation",
+    ["Submit Complaint", "Dashboard", "City Map", "Analytics"]
+)
+
+# -------------------------
+# CLASSIFIER
+# -------------------------
 
 def classify_complaint(text):
 
     text = text.lower()
 
     if "garbage" in text or "trash" in text:
-        return {
-            "Category": "Sanitation",
-            "Department": "Waste Management",
-            "Urgency": "High"
-        }
+        return {"Category":"Sanitation","Department":"Waste Management","Urgency":"High"}
 
     elif "streetlight" in text or "light" in text:
-        return {
-            "Category": "Infrastructure",
-            "Department": "Electrical Department",
-            "Urgency": "Medium"
-        }
+        return {"Category":"Infrastructure","Department":"Electrical Department","Urgency":"Medium"}
 
     elif "water" in text or "leak" in text:
-        return {
-            "Category": "Water Supply",
-            "Department": "Water Department",
-            "Urgency": "High"
-        }
+        return {"Category":"Water Supply","Department":"Water Department","Urgency":"High"}
 
     elif "traffic" in text or "signal" in text:
-        return {
-            "Category": "Traffic",
-            "Department": "Traffic Department",
-            "Urgency": "Medium"
-        }
+        return {"Category":"Traffic","Department":"Traffic Department","Urgency":"Medium"}
 
     else:
-        return {
-            "Category": "General Complaint",
-            "Department": "City Services",
-            "Urgency": "Low"
-        }
-  
+        return {"Category":"General Complaint","Department":"City Services","Urgency":"Low"}
 
-st.title("City Complaint AI Analyzer")
+# -------------------------
+# REPAIR RECOMMENDATION
+# -------------------------
 
-st.header("Submit a Complaint")
+def repair_recommendation(category):
 
-complaint = st.text_area("Describe your issue")
+    if category == "Sanitation":
+        return "Schedule waste collection and sanitation inspection."
 
-location = st.text_input("Location")
+    elif category == "Infrastructure":
+        return "Electrical team should inspect and repair the streetlight."
 
-if st.button("Submit Complaint"):
+    elif category == "Water Supply":
+        return "Water department should inspect and repair the pipeline leakage."
 
-    # Check if complaint box is empty
-    if complaint.strip() == "":
-        st.error("Please enter a complaint.")
+    elif category == "Traffic":
+        return "Traffic engineers should inspect and repair the signal."
 
     else:
-        # Run the AI classification
-        result = classify_complaint(complaint)
+        return "City services team should inspect the issue."
 
-        # Show success message
-        st.success("Complaint analyzed!")
+# -------------------------
+# GEOLOCATION
+# -------------------------
 
-        # Show what user entered
-        st.write("Complaint:", complaint)
-        st.write("Location:", location)
+def get_coordinates(location):
 
-        # Show AI results
-        st.subheader("AI Analysis")
+    try:
+        geolocator = Nominatim(user_agent="city_ai_app")
+        loc = geolocator.geocode(location)
 
-        st.write("Category:", result["Category"])
-        st.write("Department:", result["Department"])
-        st.write("Urgency:", result["Urgency"])
+        if loc:
+            return loc.latitude, loc.longitude
 
-        # Save complaint into storage
-        st.session_state.complaints.append({
-            "complaint": complaint,
-            "location": location,
-            "category": result["Category"],
-            "department": result["Department"],
-            "urgency": result["Urgency"]
-        })
-st.header("Complaint Dashboard")
+    except:
+        pass
 
-if len(st.session_state.complaints) > 0:
-    df = pd.DataFrame(st.session_state.complaints)
-    st.dataframe(df)
-st.header("City Complaint Map")
+    return None, None
 
-m = folium.Map(location=[32.37, -86.30], zoom_start=12)
+# -------------------------
+# EMAIL REPORT
+# -------------------------
 
-for c in st.session_state.complaints:
+def generate_email_report(df):
 
-    color = "green"
+    total = len(df)
+    top_category = df["category"].value_counts().idxmax()
 
-    if c["urgency"] == "High":
-        color = "red"
-    elif c["urgency"] == "Medium":
-        color = "orange"
+    high = len(df[df["urgency"]=="High"])
+    medium = len(df[df["urgency"]=="Medium"])
+    low = len(df[df["urgency"]=="Low"])
 
-    folium.Marker(
-        [32.37, -86.30],
-        popup=f"{c['complaint']} ({c['urgency']})",
-        icon=folium.Icon(color=color)
-    ).add_to(m)
+    resolved = len(df[df["status"]=="Resolved"])
+    pending = len(df[df["status"]=="Pending"])
 
-st_folium(m, width=700)            
+    top_department = df["department"].value_counts().idxmax()
+
+    email = f"""
+Subject: Daily City Complaint Report
+
+Dear City Operations Team,
+
+Today the system recorded {total} complaints.
+
+Most common issue: {top_category}
+
+High urgency complaints: {high}
+Medium urgency complaints: {medium}
+Low urgency complaints: {low}
+
+Resolved complaints: {resolved}
+Pending complaints: {pending}
+
+Top department requiring attention: {top_department}
+
+Regards,
+Smart City Complaint AI System
+"""
+    return email
+
+# -------------------------
+# SUBMIT COMPLAINT PAGE
+# -------------------------
+
+if page == "Submit Complaint":
+
+    st.title("Submit City Complaint")
+
+    with st.form("complaint_form", clear_on_submit=True):
+
+        complaint = st.text_area("Describe the issue")
+        location = st.text_input("Location")
+
+        submit = st.form_submit_button("Submit Complaint")
+
+    if submit:
+
+        if complaint.strip()=="":
+            st.error("Please enter complaint")
+
+        else:
+
+            result = classify_complaint(complaint)
+
+            lat, lon = get_coordinates(location)
+
+            recommendation = repair_recommendation(result["Category"])
+
+            st.session_state.complaints.append({
+                "complaint": complaint,
+                "location": location,
+                "category": result["Category"],
+                "department": result["Department"],
+                "urgency": result["Urgency"],
+                "recommendation": recommendation,
+                "status": "Pending",
+                "time": datetime.now(),
+                "lat": lat,
+                "lon": lon
+            })
+
+            st.success("Complaint successfully submitted!")
+
+# -------------------------
+# DASHBOARD PAGE
+# -------------------------
+
+elif page == "Dashboard":
+
+    st.title("City Complaint Dashboard")
+
+    if len(st.session_state.complaints)==0:
+        st.info("No complaints yet")
+
+    else:
+
+        df = pd.DataFrame(st.session_state.complaints)
+
+        high = len(df[df["urgency"]=="High"])
+        medium = len(df[df["urgency"]=="Medium"])
+        low = len(df[df["urgency"]=="Low"])
+        total = len(df)
+
+        c1,c2,c3,c4 = st.columns(4)
+
+        c1.metric("Total Complaints", total)
+        c2.metric("High Urgency", high)
+        c3.metric("Medium Urgency", medium)
+        c4.metric("Low Urgency", low)
+
+        st.subheader("Complaint Table")
+
+        st.dataframe(df)
+
+        st.subheader("Resolve Complaints")
+
+        for i,c in enumerate(st.session_state.complaints):
+
+            if c["status"]=="Pending":
+
+                if st.button(f"Resolve Complaint {i+1}"):
+
+                    st.session_state.complaints[i]["status"]="Resolved"
+                    st.rerun()
+
+        st.subheader("Repair Recommendations")
+
+        for c in st.session_state.complaints:
+
+            st.info(f"{c['category']} → {c['recommendation']}")
+
+        st.download_button(
+            "Download Complaints CSV",
+            df.to_csv(index=False),
+            "complaints.csv"
+        )
+
+# -------------------------
+# MAP PAGE
+# -------------------------
+
+elif page == "City Map":
+
+    st.title("City Complaint Map")
+
+    m = folium.Map(location=[20.59,78.96], zoom_start=4)
+
+    cluster = MarkerCluster().add_to(m)
+
+    heat_data=[]
+
+    for c in st.session_state.complaints:
+
+        if c["lat"] and c["lon"]:
+
+            if c["urgency"]=="High":
+                color="red"
+            elif c["urgency"]=="Medium":
+                color="orange"
+            else:
+                color="green"
+
+            popup=f"""
+Location: {c['location']}
+Complaint: {c['complaint']}
+Department: {c['department']}
+Status: {c['status']}
+"""
+
+            folium.Marker(
+                [c["lat"],c["lon"]],
+                popup=popup,
+                icon=folium.Icon(color=color)
+            ).add_to(cluster)
+
+            heat_data.append([c["lat"],c["lon"]])
+
+    if heat_data:
+        HeatMap(heat_data).add_to(m)
+
+    st_folium(m,width=900)
+
+# -------------------------
+# ANALYTICS PAGE
+# -------------------------
+
+elif page == "Analytics":
+
+    st.title("City Analytics")
+
+    if len(st.session_state.complaints)==0:
+        st.info("No analytics yet")
+
+    else:
+
+        df = pd.DataFrame(st.session_state.complaints)
+
+        total=len(df)
+        top_category=df["category"].value_counts().idxmax()
+
+        high=len(df[df["urgency"]=="High"])
+        medium=len(df[df["urgency"]=="Medium"])
+        low=len(df[df["urgency"]=="Low"])
+
+        resolved=len(df[df["status"]=="Resolved"])
+        pending=len(df[df["status"]=="Pending"])
+
+        st.subheader("Daily City Report")
+
+        report=f"""
+Today the city received {total} complaints.
+
+Most common issue category: {top_category}
+
+High urgency complaints: {high}
+Medium urgency complaints: {medium}
+Low urgency complaints: {low}
+
+Resolved complaints: {resolved}
+Pending complaints: {pending}
+"""
+
+        st.info(report)
+
+        st.subheader("Complaint Trend")
+
+        df["time"]=pd.to_datetime(df["time"])
+        df["hour"]=df["time"].dt.hour
+
+        trend=df.groupby("hour").size()
+
+        st.line_chart(trend)
+
+        st.subheader("Department Priority")
+
+        dept_counts=df.groupby("department").size().sort_values(ascending=False)
+
+        top_dept=dept_counts.index[0]
+
+        st.success(f"{top_dept} should respond first")
+
+        st.subheader("Generate Authority Email Report")
+
+        if st.button("Generate Email Report"):
+
+            email = generate_email_report(df)
+
+            st.text_area("Email Report", email, height=250)
+
+            st.download_button(
+                "Download Email Report",
+                email,
+                "city_report.txt"
+            )
