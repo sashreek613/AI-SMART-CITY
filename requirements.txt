@@ -3,3 +3,7 @@ pandas
 folium
 streamlit-folium
 requests
+geopy
+textblob
+streamlit-js-eval
+streamlit-autorefresh
