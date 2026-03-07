@@ -13,24 +13,48 @@ from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="Smart City AI Command Center", layout="wide")
 
+# -------------------------
+# GOVERNMENT PASSWORD
+# -------------------------
+
+GOV_PASSWORD = "smartcity2026"
+
+# -------------------------
 # AUTO REFRESH
+# -------------------------
+
 st_autorefresh(interval=10000, key="refresh")
+
+# -------------------------
+# GEOLOCATOR
+# -------------------------
 
 geolocator = Nominatim(user_agent="smart_city_ai")
 
+# -------------------------
 # SESSION STORAGE
+# -------------------------
+
 if "complaints" not in st.session_state:
     st.session_state.complaints = []
 
+if "gov_logged_in" not in st.session_state:
+    st.session_state.gov_logged_in = False
+
+# -------------------------
 # LOAD CITY DATA
+# -------------------------
+
 @st.cache_data(ttl=300)
 def load_city_data():
 
     url = "https://data.montgomeryal.gov/resource/8u7v-jw6c.json"
 
     try:
+
         r = requests.get(url)
         data = r.json()
+
         df = pd.DataFrame(data)
 
         if "latitude" in df.columns:
@@ -44,7 +68,10 @@ def load_city_data():
 
 city_df = load_city_data()
 
+# -------------------------
 # AI SUMMARY
+# -------------------------
+
 def summarize(text):
 
     blob = TextBlob(text)
@@ -54,7 +81,10 @@ def summarize(text):
 
     return text[:80]
 
+# -------------------------
 # URGENCY DETECTION
+# -------------------------
+
 def detect_urgency(text):
 
     text = text.lower()
@@ -79,7 +109,10 @@ def detect_urgency(text):
     else:
         return "Low"
 
+# -------------------------
 # CLASSIFIER
+# -------------------------
+
 def classify(text):
 
     text = text.lower()
@@ -101,7 +134,10 @@ def classify(text):
 
     return "General","City Services"
 
+# -------------------------
 # GEO FUNCTIONS
+# -------------------------
+
 def get_coordinates(location):
 
     try:
@@ -129,7 +165,10 @@ def reverse_geocode(lat,lon):
 
     return f"{lat},{lon}"
 
+# -------------------------
 # SIDEBAR
+# -------------------------
+
 st.sidebar.title("Smart City System")
 
 page = st.sidebar.radio(
@@ -146,7 +185,10 @@ page = st.sidebar.radio(
     ]
 )
 
+# -------------------------
 # CITIZEN PORTAL
+# -------------------------
+
 if page == "Citizen Portal":
 
     st.title("Citizen Complaint Portal")
@@ -156,8 +198,10 @@ if page == "Citizen Portal":
         gps = get_geolocation()
 
         if gps:
+
             st.session_state.lat = gps["coords"]["latitude"]
             st.session_state.lon = gps["coords"]["longitude"]
+
             st.session_state.address = reverse_geocode(
                 st.session_state.lat,
                 st.session_state.lon
@@ -232,7 +276,10 @@ if page == "Citizen Portal":
 
             st.success(f"Complaint Submitted. Your ID: {complaint_id}")
 
+# -------------------------
 # TRACK COMPLAINT
+# -------------------------
+
 elif page == "Track Complaint":
 
     st.title("Track Complaint")
@@ -267,10 +314,33 @@ elif page == "Track Complaint":
             elif status=="Resolved":
                 st.success("Issue resolved")
 
+# -------------------------
 # GOVERNMENT PORTAL
+# -------------------------
+
 elif page == "Government Portal":
 
     st.title("Government Control Panel")
+
+    if not st.session_state.gov_logged_in:
+
+        password = st.text_input("Enter Government Password", type="password")
+
+        if st.button("Login"):
+
+            if password == GOV_PASSWORD:
+                st.session_state.gov_logged_in = True
+                st.success("Access Granted")
+                st.rerun()
+
+            else:
+                st.error("Incorrect Password")
+
+        st.stop()
+
+    if st.button("Logout"):
+        st.session_state.gov_logged_in = False
+        st.rerun()
 
     df=pd.DataFrame(st.session_state.complaints)
 
@@ -306,7 +376,10 @@ elif page == "Government Portal":
 
             st.divider()
 
+# -------------------------
 # DASHBOARD
+# -------------------------
+
 elif page=="Dashboard":
 
     st.title("City Dashboard")
@@ -332,7 +405,10 @@ elif page=="Dashboard":
             "complaints.csv"
         )
 
+# -------------------------
 # CITY MAP
+# -------------------------
+
 elif page=="City Map":
 
     st.title("City Issue Map")
@@ -374,7 +450,10 @@ elif page=="City Map":
 
     st_folium(m,width=900,height=600)
 
+# -------------------------
 # ANALYTICS
+# -------------------------
+
 elif page=="Analytics":
 
     st.title("City Analytics")
@@ -386,7 +465,10 @@ elif page=="Analytics":
         st.bar_chart(df["department"].value_counts())
         st.bar_chart(df["location"].value_counts())
 
+# -------------------------
 # RISK DASHBOARD
+# -------------------------
+
 elif page=="Risk Dashboard":
 
     st.title("City Risk Prediction")
@@ -415,7 +497,10 @@ elif page=="Risk Dashboard":
 
         st.metric("City Risk Level",level)
 
+# -------------------------
 # EMERGENCY ALERTS
+# -------------------------
+
 elif page=="Emergency Alerts":
 
     st.title("Emergency Alerts")
