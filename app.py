@@ -33,7 +33,7 @@ if "complaints" not in st.session_state:
     st.session_state.complaints = []
 
 # -------------------------
-# LOAD MONTGOMERY DATA
+# LOAD CITY DATA
 # -------------------------
 
 @st.cache_data(ttl=300)
@@ -47,10 +47,8 @@ def load_city_data():
         df = pd.DataFrame(data)
 
         if "latitude" in df.columns:
-            df["lat"] = df["latitude"].astype(float)
-            df["lon"] = df["longitude"].astype(float)
-
-        df["source"] = "City"
+            df["lat"] = pd.to_numeric(df["latitude"], errors="coerce")
+            df["lon"] = pd.to_numeric(df["longitude"], errors="coerce")
 
         return df
 
@@ -158,7 +156,7 @@ page = st.sidebar.radio(
 )
 
 # -------------------------
-# SUBMIT COMPLAINT
+# SUBMIT PAGE
 # -------------------------
 
 if page == "Submit Complaint":
@@ -183,7 +181,6 @@ if page == "Submit Complaint":
         if gps:
             lat = gps["coords"]["latitude"]
             lon = gps["coords"]["longitude"]
-
             address = reverse_geocode(lat,lon)
 
     st.subheader("Select location on map")
@@ -212,8 +209,7 @@ if page == "Submit Complaint":
             "urgency":urgency,
             "lat":lat,
             "lon":lon,
-            "time":datetime.now(),
-            "source":"Citizen"
+            "time":datetime.now()
 
         })
 
@@ -225,17 +221,34 @@ if page == "Submit Complaint":
 
 elif page == "Dashboard":
 
-    st.title("City Command Center")
+    st.title("City Command Center Dashboard")
 
-    citizen_df = pd.DataFrame(st.session_state.complaints)
+    df = pd.DataFrame(st.session_state.complaints)
 
-    col1,col2 = st.columns(2)
+    if len(df) == 0:
+        st.info("No complaints submitted yet")
 
-    col1.metric("Citizen Complaints",len(citizen_df))
-    col2.metric("Official City Reports",len(city_df))
+    else:
+
+        c1,c2,c3,c4 = st.columns(4)
+
+        c1.metric("Total Complaints",len(df))
+        c2.metric("High Urgency",len(df[df["urgency"]=="High"]))
+        c3.metric("Medium Urgency",len(df[df["urgency"]=="Medium"]))
+        c4.metric("Low Urgency",len(df[df["urgency"]=="Low"]))
+
+        st.subheader("Live Complaint Feed")
+
+        st.dataframe(df.sort_values("time",ascending=False))
+
+        st.download_button(
+            "Download Complaints CSV",
+            df.to_csv(index=False),
+            "complaints.csv"
+        )
 
 # -------------------------
-# MAP
+# CITY MAP
 # -------------------------
 
 elif page == "City Map":
@@ -252,7 +265,7 @@ elif page == "City Map":
 
     for _,row in citizen_df.iterrows():
 
-        if row["lat"]:
+        if pd.notnull(row["lat"]) and pd.notnull(row["lon"]):
 
             folium.Marker(
                 [row["lat"],row["lon"]],
@@ -264,7 +277,7 @@ elif page == "City Map":
 
     for _,row in city_df.iterrows():
 
-        if "lat" in row:
+        if "lat" in row and pd.notnull(row["lat"]):
 
             folium.Marker(
                 [row["lat"],row["lon"]],
@@ -274,7 +287,8 @@ elif page == "City Map":
 
             heat.append([row["lat"],row["lon"]])
 
-    HeatMap(heat).add_to(m)
+    if heat:
+        HeatMap(heat).add_to(m)
 
     st_folium(m,width=900,height=600)
 
@@ -286,13 +300,18 @@ elif page == "Analytics":
 
     st.title("City Analytics")
 
-    citizen_df = pd.DataFrame(st.session_state.complaints)
+    df = pd.DataFrame(st.session_state.complaints)
 
-    if len(citizen_df)>0:
+    if len(df)==0:
+        st.info("No analytics yet")
 
-        st.bar_chart(citizen_df["department"].value_counts())
+    else:
 
-        st.bar_chart(citizen_df["location"].value_counts())
+        st.subheader("Department Workload")
+        st.bar_chart(df["department"].value_counts())
+
+        st.subheader("Location Hotspots")
+        st.bar_chart(df["location"].value_counts())
 
 # -------------------------
 # RISK DASHBOARD
@@ -302,9 +321,9 @@ elif page == "Risk Dashboard":
 
     st.title("City Risk Score Dashboard")
 
-    citizen_df = pd.DataFrame(st.session_state.complaints)
+    df = pd.DataFrame(st.session_state.complaints)
 
-    if len(citizen_df)==0:
+    if len(df)==0:
         st.info("No data")
 
     else:
@@ -318,9 +337,9 @@ elif page == "Risk Dashboard":
             else:
                 return 1
 
-        citizen_df["risk"] = citizen_df.apply(risk_score,axis=1)
+        df["risk"] = df.apply(risk_score,axis=1)
 
-        risk = citizen_df.groupby("location")["risk"].sum()
+        risk = df.groupby("location")["risk"].sum()
 
         risk_df = risk.sort_values(ascending=False).reset_index()
 
@@ -341,34 +360,42 @@ elif page == "3D Heatmap":
     df = pd.DataFrame(st.session_state.complaints)
 
     if len(df)==0:
-        st.info("No data")
+        st.info("No complaint data")
 
     else:
 
         df = df.dropna(subset=["lat","lon"])
 
-        layer = pdk.Layer(
-            "HexagonLayer",
-            data=df,
-            get_position="[lon, lat]",
-            radius=200,
-            elevation_scale=4,
-            elevation_range=[0,1000],
-            pickable=True,
-            extruded=True,
-        )
+        if len(df)==0:
+            st.info("No location data available")
 
-        view_state = pdk.ViewState(
-            latitude=df["lat"].mean(),
-            longitude=df["lon"].mean(),
-            zoom=11,
-            pitch=50,
-        )
+        else:
 
-        deck = pdk.Deck(
-            layers=[layer],
-            initial_view_state=view_state,
-            map_style="mapbox://styles/mapbox/dark-v10",
-        )
+            df["lat"] = pd.to_numeric(df["lat"])
+            df["lon"] = pd.to_numeric(df["lon"])
 
-        st.pydeck_chart(deck)
+            layer = pdk.Layer(
+                "HexagonLayer",
+                data=df,
+                get_position="[lon, lat]",
+                radius=200,
+                elevation_scale=4,
+                elevation_range=[0,1000],
+                pickable=True,
+                extruded=True,
+            )
+
+            view_state = pdk.ViewState(
+                latitude=df["lat"].mean(),
+                longitude=df["lon"].mean(),
+                zoom=11,
+                pitch=50,
+            )
+
+            deck = pdk.Deck(
+                layers=[layer],
+                initial_view_state=view_state,
+                map_style="mapbox://styles/mapbox/dark-v10"
+            )
+
+            st.pydeck_chart(deck)
